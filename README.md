@@ -1,13 +1,13 @@
 # Mini Inference Engine — Starter
 
-Phase 1 contains a sequential CPU MLP inference baseline, basic correctness checks, a CSV benchmark writer, and a Streamlit dashboard.
+The project contains sequential CPU and OpenMP benchmark executables, a CUDA/cuBLAS inference backend (built when CUDA is available), and a Streamlit dashboard.
 
 ## Scope and honesty
 
 - Uses deterministic synthetic inputs and deterministic random weights.
 - This is a compute workload, **not a trained model or a meaningful classifier**.
 - Runtime values are generated only when you run the program on your own computer.
-- No OpenMP or CUDA code is included yet. Add those after Phase 1 builds and passes.
+- The CUDA backend is optional and requires a CUDA compiler, CUDA Toolkit, and cuBLAS.
 
 Network: `512 -> 256 -> 256 -> 10`, FP32, ReLU hidden layers, stable Softmax output.
 
@@ -16,7 +16,7 @@ Network: `512 -> 256 -> 256 -> 10`, FP32, ReLU hidden layers, stable Softmax out
 - C++17 compiler
 - CMake 3.16+
 - Python 3.10+ for dashboard
-- CUDA Toolkit is needed in a later phase, not Phase 1.
+- CUDA Toolkit, cuBLAS, and a usable NVIDIA GPU are required to execute the CUDA benchmark.
 
 ### Ubuntu
 
@@ -55,8 +55,8 @@ If the executable is elsewhere, locate `inference_cpu.exe` inside `build`.
 
 ## What the program does
 
-1. Creates deterministic synthetic weights and input batches.
-2. Checks output shape, finite values, probability range, Softmax row sums, and repeatability.
+1. Creates deterministic synthetic weights and input batches from the shared model/input generator.
+2. Checks output shape, finite values, probability range, Softmax row sums, and repeatability; OpenMP is also compared with the sequential reference.
 3. Runs warm-ups, then repeated timed inference.
 4. Reports median latency and throughput for batch sizes 1, 16, 64, 256, 1024.
 5. Writes actual run results to `results/benchmark.csv`.
@@ -86,17 +86,44 @@ Run the C++ benchmark before starting the dashboard.
 
 ## End-semester implementation roadmap
 
-1. **Phase 1 — Sequential CPU baseline** (included).
-2. **Phase 2 — OpenMP backend:** parallelize independent batch rows and compare output with CPU reference.
-3. **Phase 3 — CUDA/cuBLAS:** use cuBLAS SGEMM for dense layers; CUDA kernels for bias/activation; verify against CPU.
-4. **Phase 4 — Benchmark protocol:** include transfer timing; report latency, throughput, speedup and efficiency.
-5. **Phase 5 — Adaptive scheduler:** use measured profiles to select a backend for each workload. Do not hardcode unmeasured crossover claims.
-6. **Phase 6 — Dashboard:** compare backends, show scheduler decision and export plots.
-7. **Optional INT8 extension:** only after FP32 implementations are correct and benchmarked.
+1. Shared deterministic model and input generation is used by sequential CPU, OpenMP, and CUDA runners.
+2. CPU and OpenMP benchmarks use the same model, inputs, batch sizes, and CSV field definitions.
+3. `inference_cuda` checks numerical agreement with the sequential CPU reference before timing CUDA.
+4. The dashboard combines backend measurements and selects the lowest measured median latency for each batch size; this is a profile based decision, so newly measured device data can change the choice.
+5. CUDA latency includes transfers and setup. Transfer time is not currently separated from the end-to-end measurement.
+6. Optional INT8 quantization remains deferred until FP32 correctness and benchmark coverage are stable.
 
 ## Phase 1 correctness checks
 
-Checks output shape, finite values, probabilities in [0,1], each Softmax row sum within `1e-5`, and deterministic repeatability within `1e-7`. These are implementation checks, not model-accuracy tests. CPU/GPU agreement will be added when multiple backends exist.
+Checks output shape, finite values, probabilities in [0,1], each Softmax row sum within `1e-5`, and deterministic repeatability within `1e-7`. These are implementation checks, not model-accuracy tests.
+
+## CUDA backend
+
+CUDA detection is optional. CPU targets remain available when `nvcc` is not installed. With CMake 3.18+, the CUDA Toolkit, and cuBLAS installed, build and run the CUDA comparison runner:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target inference_cuda -j
+./build/inference_cuda
+```
+
+The runner compares the CUDA backend with the sequential CPU reference using identical deterministic networks and inputs. It checks output agreement, reports median latency and speedup for batch sizes 1, 16, 64, 256, and 1024, and writes measurements to `results/cuda_comparison.csv`. CUDA timings include host/device copies, weight setup, and per-call CUDA/cuBLAS setup, so they represent end-to-end calls rather than kernel-only time. Adjust repetitions with `--warmups N` and `--trials N`.
+
+### WSL
+
+When built in WSL, `inference_cuda` links directly to WSL's CUDA driver bridge at
+`/usr/lib/wsl/lib/libcuda.so.1`. This prevents an NVIDIA Linux driver installed
+inside the distribution from hiding the GPU exposed by Windows. Reconfigure and
+rebuild after pulling this change:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target inference_cuda -j
+./build/inference_cuda
+```
+
+WSL uses the NVIDIA driver installed on Windows; NVIDIA recommends installing
+the CUDA toolkit in WSL without a Linux NVIDIA driver package.
 
 ## Suggested Git commits
 

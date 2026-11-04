@@ -96,6 +96,7 @@ bool forward_cpu(const MLP& net, const float* x, float* y, int batch) {
     return true;
 }
 
+#ifdef _OPENMP
 bool forward_cpu_omp(const MLP& net, const float* x, float* y, int batch) {
     if (net.layers.empty() || batch <= 0) return false;
 
@@ -152,6 +153,7 @@ bool forward_cpu_omp(const MLP& net, const float* x, float* y, int batch) {
     std::copy(cur, cur + static_cast<size_t>(batch) * net.output_dim(), y);
     return true;
 }
+#endif
 
 const char* backend_name_cpu() { return "CPU (1 thread)"; }
 const char* backend_name_omp() { return "CPU (OpenMP)"; }
