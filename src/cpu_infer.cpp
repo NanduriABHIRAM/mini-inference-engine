@@ -14,10 +14,6 @@
 namespace mie {
 namespace {
 
-// ReLU, written so the compiler can auto-vectorise it into SIMD lanes. The
-// max(0, x) form has no branch, which matters: a branchy ReLU costs several
-// times more than the arithmetic it guards, because the two sides are
-// unpredictable and the CPU cannot speculate past them.
 inline void relu(float* z, int n) {
     for (int i = 0; i < n; ++i) {
         z[i] = z[i] > 0.0f ? z[i] : 0.0f;
@@ -96,7 +92,6 @@ bool forward_cpu(const MLP& net, const float* x, float* y, int batch) {
     return true;
 }
 
-#ifdef _OPENMP
 bool forward_cpu_omp(const MLP& net, const float* x, float* y, int batch) {
     if (net.layers.empty() || batch <= 0) return false;
 
@@ -153,7 +148,6 @@ bool forward_cpu_omp(const MLP& net, const float* x, float* y, int batch) {
     std::copy(cur, cur + static_cast<size_t>(batch) * net.output_dim(), y);
     return true;
 }
-#endif
 
 const char* backend_name_cpu() { return "CPU (1 thread)"; }
 const char* backend_name_omp() { return "CPU (OpenMP)"; }
