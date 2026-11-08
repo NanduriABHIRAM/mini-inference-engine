@@ -1,133 +1,133 @@
-# Mini Inference Engine — Starter
+# Mini Inference Engine
 
-The project contains sequential CPU and OpenMP benchmark executables, a CUDA/cuBLAS inference backend (built when CUDA is available), and a Streamlit dashboard.
+One inference engine serves two workloads: a deterministic MLP benchmark and
+credit-card fraud detection. Both use the same C++ `inference_runner` and the
+same four backend choices: sequential CPU, OpenMP CPU, CUDA/cuBLAS GPU, and
+adaptive AUTO selection.
 
-## Scope and honesty
+## Architecture
 
-- Uses deterministic synthetic inputs and deterministic random weights.
-- This is a compute workload, **not a trained model or a meaningful classifier**.
-- Runtime values are generated only when you run the program on your own computer.
-- The CUDA backend is optional and requires a CUDA compiler, CUDA Toolkit, and cuBLAS.
-
-Network: `512 -> 256 -> 256 -> 10`, FP32, ReLU hidden layers, stable Softmax output.
-
-## Dependencies
-
-- C++17 compiler
-- CMake 3.16+
-- Python 3.10+ for dashboard
-- CUDA Toolkit, cuBLAS, and a usable NVIDIA GPU are required to execute the CUDA benchmark.
-
-### Ubuntu
-
-```bash
-sudo apt update
-sudo apt install -y build-essential cmake python3 python3-venv python3-pip
+```text
+Streamlit UI (dashboard/app.py)
+├── Benchmark page ──────── shared Python engine client ─┐
+└── Fraud Detection page ── shared Python engine client ─┼─ inference_runner
+                                                         ├─ sequential CPU
+                                                         ├─ OpenMP CPU
+                                                         └─ CUDA/cuBLAS GPU
 ```
 
-### Build/run on Ubuntu or Linux
+The fraud model is trained in Python, exported in portable `MIE_MLP_V1` form,
+then loaded by the same C++ dense-layer, activation, validation, and scheduler
+path as the benchmark. Fraud preprocessing, feature order, calibration, and
+threshold metadata are saved beside the model.
 
-Run from the project root:
+## Build
+
+Requirements: C++17, CMake 3.16+, Python 3.10+. CUDA is optional. OpenMP is
+also optional; when a compiler does not support it, CMake still builds the
+project and labels the OpenMP benchmark executable as a sequential fallback.
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
-./build/inference_cpu
+cmake --build build --parallel
 ```
 
-Custom trial count:
+CUDA architecture is configurable rather than hard-coded:
 
 ```bash
-./build/inference_cpu --warmups 3 --trials 7 --csv results/benchmark.csv
+cmake -S . -B build -DMIE_CUDA_ARCHITECTURES="75;86;89"
 ```
 
-### Windows
+Run benchmark executables directly when desired:
 
-Install Visual Studio Build Tools with the **Desktop development with C++** workload and CMake. In a Developer PowerShell:
-
-```powershell
-cmake -S . -B build
-cmake --build build --config Release
-.\build\Release\inference_cpu.exe
+```bash
+./build/inference_cpu --csv results/benchmark.csv
+./build/inference_openmp --csv results/openmp.csv
+./build/inference_cuda --csv results/cuda_comparison.csv  # when CUDA is usable
 ```
 
-If the executable is elsewhere, locate `inference_cpu.exe` inside `build`.
+## Unified UI
 
-## What the program does
-
-1. Creates deterministic synthetic weights and input batches from the shared model/input generator.
-2. Checks output shape, finite values, probability range, Softmax row sums, and repeatability; OpenMP is also compared with the sequential reference.
-3. Runs warm-ups, then repeated timed inference.
-4. Reports median latency and throughput for batch sizes 1, 16, 64, 256, 1024.
-5. Writes actual run results to `results/benchmark.csv`.
-
-The exact timings depend on your machine. This README contains no fabricated timings.
-
-## Dashboard
-
-From the project root:
+Install the application dependencies, build the shared runner, and launch the
+single UI:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements-dashboard.txt
+cmake --build build --target inference_runner --parallel
 streamlit run dashboard/app.py
 ```
 
-Windows PowerShell activation:
+Use the sidebar to switch between **Benchmark** and **Fraud Detection**. The
+backend selector is shared. Every result shows the actual backend selected by
+the C++ runner. AUTO profiles available CPU/OpenMP/CUDA candidates on the
+current model and batch, verifies numerical agreement with sequential CPU, and
+selects the fastest valid candidate.
 
-```powershell
-.venv\Scripts\Activate.ps1
-python -m pip install -r requirements-dashboard.txt
-streamlit run dashboard/app.py
-```
+For AUTO, result CSVs distinguish:
 
-Run the C++ benchmark before starting the dashboard.
+- `latency_ms`: final selected-backend inference call.
+- `scheduler_selection_latency_ms`: adaptive profiling and selection.
+- `total_request_latency_ms`: selection plus final inference.
 
-## End-semester implementation roadmap
+CUDA requests fall back through the same measured AUTO path when CUDA is not
+available; the requested and actual backends are both recorded.
 
-1. Shared deterministic model and input generation is used by sequential CPU, OpenMP, and CUDA runners.
-2. CPU and OpenMP benchmarks use the same model, inputs, batch sizes, and CSV field definitions.
-3. `inference_cuda` checks numerical agreement with the sequential CPU reference before timing CUDA.
-4. The dashboard combines backend measurements and selects the lowest measured median latency for each batch size; this is a profile based decision, so newly measured device data can change the choice.
-5. CUDA latency includes transfers and setup. Transfer time is not currently separated from the end-to-end measurement.
-6. Optional INT8 quantization remains deferred until FP32 correctness and benchmark coverage are stable.
+## Fraud training
 
-## Phase 1 correctness checks
-
-Checks output shape, finite values, probabilities in [0,1], each Softmax row sum within `1e-5`, and deterministic repeatability within `1e-7`. These are implementation checks, not model-accuracy tests.
-
-## CUDA backend
-
-CUDA detection is optional. CPU targets remain available when `nvcc` is not installed. With CMake 3.18+, the CUDA Toolkit, and cuBLAS installed, build and run the CUDA comparison runner:
+Download Kaggle's [Credit Card Fraud Detection dataset](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud)
+and place `creditcard.csv` in `fraud_detection/data/`. This dataset is not
+included in the repository.
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target inference_cuda -j
-./build/inference_cuda
+source .venv/bin/activate
+python -m fraud_detection.training.train
 ```
 
-The runner compares the CUDA backend with the sequential CPU reference using identical deterministic networks and inputs. It checks output agreement, reports median latency and speedup for batch sizes 1, 16, 64, 256, and 1024, and writes measurements to `results/cuda_comparison.csv`. CUDA timings include host/device copies, weight setup, and per-call CUDA/cuBLAS setup, so they represent end-to-end calls rather than kernel-only time. Adjust repetitions with `--warmups N` and `--trials N`.
+The default training workflow uses a chronological 70/15/15 split, fits scaling
+on training data only, represents `Time` as hour-of-day, uses weighted binary
+loss, early-stops on validation PR-AUC, calibrates raw neural-network scores
+with validation-only Platt scaling, and tunes both F1 and transparent
+amount/review-cost policies on validation. It reports held-out precision,
+recall, F1, PR-AUC, ROC-AUC, confusion matrix, bootstrap confidence intervals,
+and Logistic Regression plus HistGradientBoosting baselines in
+`fraud_detection/results/evaluation.json`.
 
-### WSL
-
-When built in WSL, `inference_cuda` links directly to WSL's CUDA driver bridge at
-`/usr/lib/wsl/lib/libcuda.so.1`. This prevents an NVIDIA Linux driver installed
-inside the distribution from hiding the GPU exposed by Windows. Reconfigure and
-rebuild after pulling this change:
+Useful options:
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target inference_cuda -j
-./build/inference_cuda
+python -m fraud_detection.training.train --split-strategy stratified_random
+python -m fraud_detection.training.train --false-positive-review-cost 10
+python -m fraud_detection.training.train --skip-baselines
 ```
 
-WSL uses the NVIDIA driver installed on Windows; NVIDIA recommends installing
-the CUDA toolkit in WSL without a Linux NVIDIA driver package.
+Generated datasets, models, results, builds, caches, and source ZIPs are
+ignored by Git. To create a clean source archive:
 
-## Suggested Git commits
+```bash
+python scripts/package_source.py --output /tmp/mini-inference-engine-source.zip
+```
 
-- `phase1: add sequential CPU MLP baseline`
-- `phase1: add correctness checks`
-- `phase1: add CSV benchmark output`
-- `phase1: add Streamlit dashboard`
+## Tests
+
+After dependencies are installed and the runner is built:
+
+```bash
+pytest -q fraud_detection/tests
+```
+
+The CUDA parity test automatically skips only if no usable CUDA device exists.
+The model-artifact parity test automatically skips until the Kaggle dataset has
+been trained locally.
+
+## Current limitations
+
+- CUDA is optional and unavailable environments use verified CPU/OpenMP
+  fallback; no GPU performance claim is fabricated.
+- The runner is process-per-request. CUDA context setup, weight uploads, and
+  cuBLAS-handle construction remain inside a backend call, so small batches are
+  intentionally measured end-to-end and may favor CPU. A future long-lived
+  service can retain GPU-resident model state for high-throughput scoring.
+- The cost policy uses a configurable fixed false-positive review cost; replace
+  that assumption with your organisation's economics before deployment.

@@ -1,4 +1,14 @@
 build/
+build-*/
+.pytest_cache/
+*.zip
+*:Zone.Identifier
 results/*.csv
 .venv/
 __pycache__/
+fraud_detection/data/*.csv
+fraud_detection/models/*.mie
+fraud_detection/models/*.pt
+fraud_detection/models/*.json
+fraud_detection/results/*
+!fraud_detection/results/.gitkeep

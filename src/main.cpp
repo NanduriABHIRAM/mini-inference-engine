@@ -95,6 +95,9 @@ int main(int argc, char** argv) {
         std::cout << "OpenMP maximum threads: " << omp_get_max_threads() << "\n";
 #else
         const std::string backend = "sequential_cpu";
+#ifdef MIE_OPENMP_UNAVAILABLE
+        std::cout << "OpenMP is unavailable in this build; running the sequential CPU fallback.\n";
+#endif
 #endif
         if (!csv.parent_path().empty()) fs::create_directories(csv.parent_path());
         const bool header = !fs::exists(csv) || fs::file_size(csv) == 0;

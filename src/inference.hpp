@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <string>
 #include <vector>
 
 namespace mie {
@@ -14,8 +15,18 @@ struct DenseLayer {
     std::vector<float> b;
 };
 
+// The original benchmark is a multiclass classifier and therefore finishes
+// with softmax.  Fraud detection is a binary classifier with one logit and a
+// sigmoid output.  Keeping this on the model makes the dense backends reusable
+// without changing the original workload's behaviour.
+enum class OutputActivation {
+    Softmax,
+    Sigmoid,
+};
+
 struct MLP {
     std::vector<DenseLayer> layers;
+    OutputActivation output_activation = OutputActivation::Softmax;
 
     int input_dim() const {
         return layers.empty() ? 0 : layers.front().in_features;
@@ -41,6 +52,7 @@ struct DiffStats {
 
 // Shared deterministic workload used by every backend and benchmark runner.
 MLP make_reference_model();
+MLP load_mlp_file(const std::string& path);
 std::vector<float> make_reference_input(int batch, int features);
 
 bool forward_cpu(const MLP& net, const float* x, float* y, int batch);

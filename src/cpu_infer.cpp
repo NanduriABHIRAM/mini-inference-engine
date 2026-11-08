@@ -43,6 +43,15 @@ void softmax_rows(float* z, int rows, int cols) {
     }
 }
 
+void sigmoid_rows(float* z, int rows, int cols) {
+    for (int index = 0; index < rows * cols; ++index) {
+        const float value = z[index];
+        // This branch form avoids overflow for large-magnitude logits.
+        z[index] = value >= 0.0f ? 1.0f / (1.0f + std::exp(-value))
+                                 : std::exp(value) / (1.0f + std::exp(value));
+    }
+}
+
 }  // namespace
 
 bool forward_cpu(const MLP& net, const float* x, float* y, int batch) {
@@ -81,7 +90,11 @@ bool forward_cpu(const MLP& net, const float* x, float* y, int batch) {
 
         const bool is_last = (l + 1 == net.layers.size());
         if (is_last) {
-            softmax_rows(nxt, batch, N);
+            if (net.output_activation == OutputActivation::Softmax) {
+                softmax_rows(nxt, batch, N);
+            } else {
+                sigmoid_rows(nxt, batch, N);
+            }
         } else {
             relu(nxt, batch * N);
         }
@@ -92,6 +105,7 @@ bool forward_cpu(const MLP& net, const float* x, float* y, int batch) {
     return true;
 }
 
+#ifdef _OPENMP
 bool forward_cpu_omp(const MLP& net, const float* x, float* y, int batch) {
     if (net.layers.empty() || batch <= 0) return false;
 
@@ -129,12 +143,15 @@ bool forward_cpu_omp(const MLP& net, const float* x, float* y, int batch) {
 
         const bool is_last = (l + 1 == net.layers.size());
         if (is_last) {
-            // Softmax is inherently row-local, so it parallelises over rows.
-            // Each row is reduced by exactly one thread, so no reduction buffer
-            // and no atomics are needed.
+            // Both output activations are row-local, so they parallelise over rows.
 #pragma omp parallel for schedule(static)
             for (int m = 0; m < batch; ++m) {
-                softmax_rows(nxt + static_cast<size_t>(m) * N, 1, N);
+                float* row = nxt + static_cast<size_t>(m) * N;
+                if (net.output_activation == OutputActivation::Softmax) {
+                    softmax_rows(row, 1, N);
+                } else {
+                    sigmoid_rows(row, 1, N);
+                }
             }
         } else {
 #pragma omp parallel for schedule(static)
@@ -148,6 +165,7 @@ bool forward_cpu_omp(const MLP& net, const float* x, float* y, int batch) {
     std::copy(cur, cur + static_cast<size_t>(batch) * net.output_dim(), y);
     return true;
 }
+#endif
 
 const char* backend_name_cpu() { return "CPU (1 thread)"; }
 const char* backend_name_omp() { return "CPU (OpenMP)"; }
