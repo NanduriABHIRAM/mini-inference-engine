@@ -74,9 +74,6 @@ int main(int argc, char** argv) {
         if (warmups < 0 || trials < 1)
             throw std::runtime_error("warmups must be >= 0; trials must be >= 1.");
 
-        // Force the driver library to initialize first.  On WSL this is also
-        // what ensures the executable uses WSL's libcuda bridge rather than a
-        // Linux NVIDIA driver that may be installed in the distribution.
         const CUresult driver_status = cuInit(0);
         if (driver_status != CUDA_SUCCESS) {
             throw std::runtime_error(

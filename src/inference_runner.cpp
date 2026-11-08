@@ -384,11 +384,7 @@ int main(int argc, char** argv) {
         gpu_available = gpu_status.available;
         gpu_detail = gpu_status.detail;
 #endif
-        // A fraud prediction must remain available when CUDA is missing (or
-        // temporarily inaccessible, such as in a restricted WSL session).
-        // Preserve the user's requested backend in the output, but use the
-        // same measured adaptive path as --backend auto to select a verified
-        // CPU/OpenMP fallback.
+
         const bool falling_back_from_gpu = options.backend == "gpu" && !gpu_available;
         const std::string execution_backend = falling_back_from_gpu ? "auto" : options.backend;
 

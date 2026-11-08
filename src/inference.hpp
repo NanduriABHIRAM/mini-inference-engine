@@ -7,7 +7,6 @@
 
 namespace mie {
 
-// Dense layer weights are stored row-major as [out_features][in_features].
 struct DenseLayer {
     int in_features = 0;
     int out_features = 0;
@@ -15,10 +14,6 @@ struct DenseLayer {
     std::vector<float> b;
 };
 
-// The original benchmark is a multiclass classifier and therefore finishes
-// with softmax.  Fraud detection is a binary classifier with one logit and a
-// sigmoid output.  Keeping this on the model makes the dense backends reusable
-// without changing the original workload's behaviour.
 enum class OutputActivation {
     Softmax,
     Sigmoid,
@@ -50,7 +45,6 @@ struct DiffStats {
     double rms = 0.0;
 };
 
-// Shared deterministic workload used by every backend and benchmark runner.
 MLP make_reference_model();
 MLP load_mlp_file(const std::string& path);
 std::vector<float> make_reference_input(int batch, int features);

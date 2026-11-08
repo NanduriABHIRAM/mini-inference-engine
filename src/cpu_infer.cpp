@@ -1,11 +1,3 @@
-// cpu_infer.cpp — The sequential CPU reference implementation.
-//
-// This is deliberately the slowest possible version: a textbook triple-nested
-// loop with no blocking, no vectorisation hints, no threading. That is the
-// point. Every optimisation in this project is measured as an improvement over
-// *this*, so it has to be an honest "what a student writes first" baseline
-// rather than something already well tuned.
-
 #include <cmath>
 #include <vector>
 
@@ -20,10 +12,6 @@ inline void relu(float* z, int n) {
     }
 }
 
-// Numerically stable softmax: subtract the row max before exponentiating. The
-// naive form overflows to inf for any input above ~88, which turns a correct
-// network into NaN output. The subtraction is exact in the sense that it
-// cancels in the final ratio, so it changes nothing but stability.
 void softmax_rows(float* z, int rows, int cols) {
     for (int r = 0; r < rows; ++r) {
         float* row = z + static_cast<size_t>(r) * cols;
@@ -56,10 +44,6 @@ void sigmoid_rows(float* z, int rows, int cols) {
 
 bool forward_cpu(const MLP& net, const float* x, float* y, int batch) {
     if (net.layers.empty() || batch <= 0) return false;
-
-    // Two scratch buffers and a ping-pong between them. Sized once from the
-    // widest layer in the network, so no allocation happens in the loop and
-    // neither does the capacity depend on which layer is running.
     const int width = net.max_width();
     std::vector<float> buf_a(static_cast<size_t>(batch) * width);
     std::vector<float> buf_b(static_cast<size_t>(batch) * width);
